@@ -33,7 +33,7 @@ class WP_Disable_Right_Click {
 
         $response = wp_remote_get(self::$external_data_url);
         if (is_wp_error($response)) {
-            return ''; // Log error or handle it
+            return '';
         }
 
         $data = wp_remote_retrieve_body($response);
